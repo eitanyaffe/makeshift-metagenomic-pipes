@@ -7,6 +7,8 @@ include $(MAKESHIFT_ROOT)/makeshift-core/makeshift.mk
 $(call _module_root,cloud/par)
 $(call _module_root,cloud/gcp)
 
+PIPELINE_NAME?=assembly
+
 ####################################################################################
 # single config file
 ####################################################################################
@@ -68,13 +70,36 @@ DRY=F
 TOP_WAIT?=T
 
 ####################################################################################
-# buckets
+# binary bucket
 ####################################################################################
 
-# create output bucket
-p_create_buckets:
-	$(MAKE) m=gcp make_bucket i=IN
-	$(MAKE) m=gcp make_bucket i=OUT
+# compile c++ programs into the binary bucket
+# call once per pipeline
+p_init:
+	$(MAKE) m=gcp create_mount_bucket i=B
+	@$(MAKE) m=libs libs_init
+
+####################################################################################
+# create in/out buckets
+####################################################################################
+
+# create input/output/bin buckets
+p_init_buckets:
+	$(MAKE) m=gcp create_mount_bucket i=IN
+	$(MAKE) m=gcp create_mount_bucket i=OUT
+
+####################################################################################
+# cation: cleanup rule below removes all cloud data (input and and output!)
+####################################################################################
+
+p_remove_buckets:
+	$(MAKE) m=gcp destroy_bucket i=IN
+	$(MAKE) m=gcp destroy_bucket i=OUT
+	$(MAKE) m=gcp destroy_bucket i=B
+
+####################################################################################
+# shortcuts
+####################################################################################
 
 pm:
 	$(MAKE) m=gcp mount_buckets
@@ -97,13 +122,6 @@ p_download_sra:
 # user-specific prepping of the input table
 p_create_lib_table:
 	$(MAKE) config_create_tables
-
-####################################################################################
-# compile c++ code
-####################################################################################
-
-p_init:
-	@$(MAKE) m=libs libs_init
 
 ####################################################################################
 # signature based genetic comparison
@@ -296,6 +314,10 @@ d_export:
 ####################################################################################
 # combo steps
 ####################################################################################
+
+# call once per pipeline: p_init
+# call once per project: p_init_buckets
+# call once per run: p_all
 
 p_all: \
 rsync \
