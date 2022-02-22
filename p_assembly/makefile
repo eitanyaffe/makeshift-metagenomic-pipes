@@ -13,12 +13,7 @@ PIPELINE_NAME?=assembly
 # single config file
 ####################################################################################
 
-#c=arsenic
-#c=test
-#c=metagenomics/c60
-
 c?=examples/SRA_example
-#$(call _config_root,metagenomics/$c)
 $(call _config_root,$c)
 
 ####################################################################################
