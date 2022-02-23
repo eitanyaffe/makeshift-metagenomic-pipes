@@ -55,11 +55,11 @@ p_create_bucket:
 	$(MAKE) m=gcp create_mount_bucket i=OUT
 
 # 3. call module step
-p_subjects:
+p_run:
 	$(MAKE) m=demo demo_subjects
 
 # combo step (steps 1-3)
-p_combo: p_rsync p_create_bucket p_subjects
+p_combo: p_rsync p_create_bucket p_run
 
 ####################################################################################
 # clean-up
