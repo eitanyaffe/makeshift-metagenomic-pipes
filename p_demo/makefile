@@ -59,13 +59,13 @@ p_run:
 	$(MAKE) m=demo demo_subjects
 
 # combo step (steps 1-3)
-p_combo: p_rsync p_create_bucket p_run
+p_all: p_rsync p_create_bucket p_run
 
 ####################################################################################
 # clean-up
 ####################################################################################
 
 # remove buckets
-p_remove_buckets:
+p_clean:
 	$(MAKE) m=gcp destroy_bucket i=OUT
 
