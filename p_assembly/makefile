@@ -9,6 +9,8 @@ $(call _module_root,cloud/gcp)
 
 PIPELINE_NAME?=assembly
 
+TOP_WORK_DIR?=$(OUTPUT_DIR)/top_work
+
 ####################################################################################
 # single config file
 ####################################################################################
@@ -93,6 +95,14 @@ p_remove_buckets:
 	$(MAKE) m=gcp destroy_bucket i=B
 
 ####################################################################################
+# utility steps
+####################################################################################
+
+# bucket space usage
+p_space:
+	$(MAKE) m=gcp gcp_du_project
+
+####################################################################################
 # shortcuts
 ####################################################################################
 
@@ -124,7 +134,7 @@ p_create_lib_table:
 
 d_sgcc:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(SGCC_INFO_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/sgcc \
 		PAR_MODULE=sgcc \
 		PAR_NAME=sgcc \
 		PAR_ODIR_VAR=SGCC_INFO_DIR \
@@ -140,7 +150,7 @@ d_sgcc:
 
 d_lib:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(LIB_INFO_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/libs \
 		PAR_MODULE=libs \
 		PAR_NAME=lib_top \
 		PAR_ODIR_VAR=LIB_INFO_DIR \
@@ -151,7 +161,7 @@ d_lib:
 
 d_libs:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(LIBS_MULTI_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/libs \
 		PAR_MODULE=libs \
 		PAR_NAME=libs_top \
 		PAR_ODIR_VAR=LIBS_MULTI_DIR \
@@ -173,7 +183,7 @@ p_libs_plot:
 
 d_assembly:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(ASSEMBLY_INFO_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/assembly \
 		PAR_MODULE=assembly \
 		PAR_NAME=top_assembly \
 		PAR_ODIR_VAR=ASSEMBLY_INFO_DIR \
@@ -184,7 +194,7 @@ d_assembly:
 
 d_assemblies:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(ASSEMBLY_MULTI_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/assembly \
 		PAR_MODULE=assembly \
 		PAR_NAME=top_assemblies \
 		PAR_ODIR_VAR=ASSEMBLY_MULTI_DIR \
@@ -204,7 +214,7 @@ p_assembly_stats:
 # libs of specific assembly
 d_map:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(MAP_SET_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/map \
 		PAR_MODULE=map \
 		PAR_NAME=map_set \
 		PAR_ODIR_VAR=MAP_SET_DIR \
@@ -216,7 +226,7 @@ d_map:
 # map all assemblies
 d_map_all:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(MAP_MULTI_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/map \
 		PAR_MODULE=map \
 		PAR_NAME=map_all \
 		PAR_ODIR_VAR=MAP_MULTI_DIR \
@@ -234,7 +244,7 @@ p_map_stats:
 
 d_genes:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(GENES_INFO_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes \
 		PAR_MODULE=genes \
 		PAR_NAME=top_genes_single \
 		PAR_ODIR_VAR=GENES_INFO_DIR \
@@ -246,7 +256,7 @@ d_genes:
 # all assemblies
 d_genes_all:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(GENES_MULTI_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes \
 		PAR_MODULE=genes \
 		PAR_NAME=top_genes \
 		PAR_ODIR_VAR=GENES_MULTI_DIR \
@@ -262,7 +272,7 @@ d_genes_all:
 # cov, single assembly
 d_genes_cov:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(GENES_COVERAGE_INFO_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes_cov \
 		PAR_MODULE=genes \
 		PAR_NAME=top_genes_cov \
 		PAR_ODIR_VAR=GENES_COVERAGE_INFO_DIR \
@@ -274,7 +284,7 @@ d_genes_cov:
 # cov, all assemblies
 d_genes_cov_all:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(GENES_COVERAGE_MULTI_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes_cov \
 		PAR_MODULE=genes \
 		PAR_NAME=top_genes_cov \
 		PAR_ODIR_VAR=GENES_COVERAGE_MULTI_DIR \
@@ -296,7 +306,7 @@ p_export:
 
 d_export:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(BASE_EXPORT_DIR) \
+		PAR_WORK_DIR=$(TOP_WORK_DIR)/export \
 		PAR_MODULE=par \
 		PAR_NAME=export \
 		PAR_ODIR_VAR=BASE_EXPORT_DIR \
@@ -310,24 +320,33 @@ d_export:
 # combo steps
 ####################################################################################
 
-# call once per pipeline: p_init
-# call once per project: p_init_buckets
-# call once per run: p_all
+# make per pipeline: p_init rsync
+# make per project: p_init_buckets
+# make per run: p_download_sra d_all_basic p_all_post
 
-p_all: \
-rsync \
-p_download_sra \
+p_all_pre: p_init_buckets p_download_sra
+
+p_all_basic: \
 d_sgcc \
-d_libs p_libs_select p_libs_plot \
-d_assemblies p_assembly_stats \
-d_map_all p_map_stats \
+d_libs \
+d_assemblies \
+d_map_all \
 d_genes_all \
-d_genes_cov_all d_export
+d_genes_cov_all
 
-####################################################################################
-# utility steps
-####################################################################################
+d_all_basic:
+	$(MAKE) m=par par \
+		PAR_WORK_DIR=$(TOP_WORK_DIR) \
+		PAR_MODULE=par \
+		PAR_NAME=all \
+		PAR_ODIR_VAR=TOP_WORK_DIR \
+		PAR_TARGET=p_all_basic \
+		PAR_PREEMTIBLE=0 \
+		PAR_WAIT=$(TOP_WAIT) \
+		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
 
-# bucket space usage
-p_space:
-	$(MAKE) m=gcp gcp_du_project
+p_all_post: \
+p_libs_select p_libs_plot \
+p_assembly_stats \
+p_map_stats \
+d_export
