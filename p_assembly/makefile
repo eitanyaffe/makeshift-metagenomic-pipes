@@ -1,21 +1,25 @@
 include $(MAKESHIFT_ROOT)/makeshift-core/makeshift.mk
 
 ####################################################################################
+####################################################################################
+# PIPELINE DEFS
+####################################################################################
+####################################################################################
+
+PIPELINE_NAME?=assembly
+
+####################################################################################
 # register base modules
 ####################################################################################
 
 $(call _module_root,cloud/par)
 $(call _module_root,cloud/gcp)
 
-PIPELINE_NAME?=assembly
-
-TOP_WORK_DIR?=$(OUTPUT_DIR)/top_work
-
 ####################################################################################
-# single config file
+# set config file
 ####################################################################################
 
-c?=examples/SRA_example
+c?=examples/pp_test
 $(call _config_root,$c)
 
 ####################################################################################
@@ -37,14 +41,21 @@ $(call _module_root,metagenomics/assembly)
 # genes
 $(call _module_root,metagenomics/genes)
 
-# map"
+# map
 $(call _module_root,metagenomics/map)
+
+# export
+$(call _module_root,utils/export)
+
+####################################################################################
+# set module
+####################################################################################
 
 m?=gcp
 $(call _active_module,$(m))
 
 ####################################################################################
-# define modules that will be uploaded to GCP 
+# define modules that are uploaded to GCP 
 ####################################################################################
 
 GCP_MAKESHIFT_MODULES=\
@@ -60,119 +71,55 @@ metagenomics/map
 GCP_MAKESHIFT_EXTRA=pipes/metagenomics/p_assembly
 
 ####################################################################################
-# global pipeline parameters
 ####################################################################################
-
-DRY=F
-TOP_WAIT?=T
-
+# PIPELINE STEPS
 ####################################################################################
-# binary bucket
 ####################################################################################
-
-# compile c++ programs into the binary bucket
-# call once per pipeline
-p_init:
-	$(MAKE) m=gcp create_mount_bucket i=B
-	@$(MAKE) m=libs libs_init
-
-####################################################################################
-# create in/out buckets
-####################################################################################
-
-# create input/output/bin buckets
-p_init_buckets:
-	$(MAKE) m=gcp create_mount_bucket i=IN
-	$(MAKE) m=gcp create_mount_bucket i=OUT
-
-####################################################################################
-# cation: cleanup rule below removes all cloud data (input and and output!)
-####################################################################################
-
-p_remove_buckets:
-	$(MAKE) m=gcp destroy_bucket i=IN
-	$(MAKE) m=gcp destroy_bucket i=OUT
-	$(MAKE) m=gcp destroy_bucket i=B
 
 ####################################################################################
 # utility steps
 ####################################################################################
 
-# bucket space usage
+# compile c++ programs into the binary bucket
+p_init: freeze_module_versions
+	$(MAKE) m=gcp create_mount_bucket i=B
+	$(MAKE) m=libs libs_init
+
+# upload config and code to cloud 
+p_rsync:
+	@$(MAKE) m=gcp rsync
+
+# create input/output/bin buckets
+p_output_bucket:
+	$(MAKE) m=gcp create_mount_bucket i=OUT
+
+# examine bucket space usage of project
 p_space:
 	$(MAKE) m=gcp gcp_du_project
-
-####################################################################################
-# shortcuts
-####################################################################################
-
-pm:
-	$(MAKE) m=gcp mount_buckets
-
-pmx:
-	$(MAKE) m=gcp mount_buckets GCP_GCSFUSE_IMPLICIT_DIRS=F
-
-# mount under home
-pmh:
-	$(MAKE) m=gcp mount_buckets_home
-
-####################################################################################
-# prepare input fastq files
-####################################################################################
-
-# download SRA data to input bucket using INPUT_SRA_TABLE
-p_download_sra:
-	$(MAKE) m=input d_input_sra
-
-# user-specific prepping of the input table
-p_create_lib_table:
-	$(MAKE) config_create_tables
 
 ####################################################################################
 # signature based genetic comparison
 ####################################################################################
 
+# sgcc for all libraries
 d_sgcc:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/sgcc \
-		PAR_MODULE=sgcc \
-		PAR_NAME=sgcc \
-		PAR_ODIR_VAR=SGCC_INFO_DIR \
-		PAR_TARGET=s_sgcc \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_NOTIFY_MAX_LEVEL=1 \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=sgcc top_sgcc
 
 ####################################################################################
 # libs
 ####################################################################################
 
+# libraries for single assembly
 d_lib:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/libs \
-		PAR_MODULE=libs \
-		PAR_NAME=lib_top \
-		PAR_ODIR_VAR=LIB_INFO_DIR \
-		PAR_TARGET=s_lib \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=libs top_lib
 
+# libraries for all assemblies
 d_libs:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/libs \
-		PAR_MODULE=libs \
-		PAR_NAME=libs_top \
-		PAR_ODIR_VAR=LIBS_MULTI_DIR \
-		PAR_TARGET=s_libs \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=libs top_libs
 
-# plot stats (read count and yields of various lib steps)
+# collect stats (read count and yields of various lib steps)
 p_libs_select:
-	@$(MAKE) m=libs libs_stats libs_dup_stats libs_select plot_stats
+	@$(MAKE) m=libs libs_stats libs_dup_stats libs_select
 
 p_libs_plot:
 	@$(MAKE) m=libs libs_plot
@@ -181,27 +128,13 @@ p_libs_plot:
 # assembly
 ####################################################################################
 
+# single assembly
 d_assembly:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/assembly \
-		PAR_MODULE=assembly \
-		PAR_NAME=top_assembly \
-		PAR_ODIR_VAR=ASSEMBLY_INFO_DIR \
-		PAR_TARGET=s_assembly \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=assembly top_assembly
 
-d_assemblies:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/assembly \
-		PAR_MODULE=assembly \
-		PAR_NAME=top_assemblies \
-		PAR_ODIR_VAR=ASSEMBLY_MULTI_DIR \
-		PAR_TARGET=s_assemblies \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+# all assemblies
+d_assembly_all:
+	@$(MAKE) m=assembly top_assembly_all
 
 # assembly stats
 p_assembly_stats:
@@ -211,29 +144,13 @@ p_assembly_stats:
 # map
 ####################################################################################
 
-# libs of specific assembly
+# map specific assembly
 d_map:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/map \
-		PAR_MODULE=map \
-		PAR_NAME=map_set \
-		PAR_ODIR_VAR=MAP_SET_DIR \
-		PAR_TARGET=s_map_set \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=map top_map
 
 # map all assemblies
 d_map_all:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/map \
-		PAR_MODULE=map \
-		PAR_NAME=map_all \
-		PAR_ODIR_VAR=MAP_MULTI_DIR \
-		PAR_TARGET=s_map_all \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=map top_map_all
 
 p_map_stats:
 	@$(MAKE) m=map map_stats plot_stats
@@ -242,28 +159,13 @@ p_map_stats:
 # genes
 ####################################################################################
 
+# predict genes
 d_genes:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes \
-		PAR_MODULE=genes \
-		PAR_NAME=top_genes_single \
-		PAR_ODIR_VAR=GENES_INFO_DIR \
-		PAR_TARGET=s_genes \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=genes top_genes
 
-# all assemblies
+# predict genes over all assemblies
 d_genes_all:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes \
-		PAR_MODULE=genes \
-		PAR_NAME=top_genes \
-		PAR_ODIR_VAR=GENES_MULTI_DIR \
-		PAR_TARGET=s_genes_multi \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=genes top_genes_all
 
 ####################################################################################
 # gene coverage
@@ -271,82 +173,86 @@ d_genes_all:
 
 # cov, single assembly
 d_genes_cov:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes_cov \
-		PAR_MODULE=genes \
-		PAR_NAME=top_genes_cov \
-		PAR_ODIR_VAR=GENES_COVERAGE_INFO_DIR \
-		PAR_TARGET=s_genes_cov_mat \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=genes top_genes_cov
 
 # cov, all assemblies
 d_genes_cov_all:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/genes_cov \
-		PAR_MODULE=genes \
-		PAR_NAME=top_genes_cov \
-		PAR_ODIR_VAR=GENES_COVERAGE_MULTI_DIR \
-		PAR_TARGET=s_genes_cov_multi \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+	@$(MAKE) m=genes top_genes_cov_all
 
 ####################################################################################
-# export
+# advanced features
 ####################################################################################
 
-p_export:
-	$(MAKE) m=sgcc sgcc_export
-	$(MAKE) m=libs libs_export
-	$(MAKE) m=assembly assembly_export
-	$(MAKE) m=map map_export
-	$(MAKE) m=genes genes_export
-
-d_export:
-	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR)/export \
-		PAR_MODULE=par \
-		PAR_NAME=export \
-		PAR_ODIR_VAR=BASE_EXPORT_DIR \
-		PAR_TARGET=p_export \
-		PAR_DISK_GB=500 \
-		PAR_PREEMTIBLE=0 \
-		PAR_WAIT=$(TOP_WAIT) \
-		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
+# mount pipeline buckets under user home directory
+# (call outside docker container)
+local_mount:
+	$(MAKE) m=gcp mount_buckets_home
 
 ####################################################################################
-# combo steps
+# !Danger Zone!
 ####################################################################################
 
-# make per pipeline: p_init rsync
-# make per project: p_init_buckets
-# make per run: p_download_sra d_all_basic p_all_post
+# remove output bucket
+p_remove_buckets:
+	$(MAKE) m=gcp destroy_bucket i=OUT
+	$(MAKE) m=gcp destroy_bucket i=B
 
-p_all_pre: p_init_buckets p_download_sra
+####################################################################################
+####################################################################################
+# PIPELINE MAIN
+####################################################################################
+####################################################################################
 
-p_all_basic: \
+# once per pipeline
+p_init_pipeline: p_init p_rsync
+
+# once per project
+p_init_project: p_output_bucket
+
+# from reads to assembly and genes
+p_run_basic: \
 d_sgcc \
 d_libs \
-d_assemblies \
+p_libs_select \
+d_assembly_all \
 d_map_all \
 d_genes_all \
 d_genes_cov_all
 
-d_all_basic:
+T?=p_run_basic
+top:
 	$(MAKE) m=par par \
-		PAR_WORK_DIR=$(TOP_WORK_DIR) \
+		PAR_WORK_DIR=$(TOP_MANAGER_DIR) \
 		PAR_MODULE=par \
-		PAR_NAME=all \
+		PAR_NAME=top \
 		PAR_ODIR_VAR=TOP_WORK_DIR \
-		PAR_TARGET=p_all_basic \
+		PAR_TARGET=$(T) \
 		PAR_PREEMTIBLE=0 \
 		PAR_WAIT=$(TOP_WAIT) \
 		PAR_MAKEFLAGS="$(PAR_MAKEOVERRIDES)"
 
-p_all_post: \
-p_libs_select p_libs_plot \
+####################################################################################
+# plots
+####################################################################################
+
+p_basic_plots: \
+p_libs_plot \
 p_assembly_stats \
-p_map_stats \
-d_export
+p_map_stats
+
+####################################################################################
+# export pipeline data
+####################################################################################
+
+EXPORT_ASSEMBLY_VARIABLES?=\
+$(SGCC_EXPORT_VARS) \
+$(LIBS_EXPORT_VARS) \
+$(ASSEMBLY_EXPORT_VARS) \
+$(GENES_EXPORT_VARS) \
+$(MAP_EXPORT_VARS)
+
+# please specify ASSEMBLY_ID
+p_export_assembly:
+	$(MAKE) m=export export_files \
+		EXPORT_ID=$(ASSEMBLY_ID) \
+		EXPORT_VARIABLES="$(EXPORT_ASSEMBLY_VARIABLES)"
